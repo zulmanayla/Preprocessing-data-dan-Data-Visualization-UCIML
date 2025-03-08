@@ -178,12 +178,185 @@ for feature in missing_features:
     display(missing_rows)  # Display the DataFrame with the missing value
     rows_to_drop.update(missing_rows.index) 
 ```
+> Grafik presentase missing value per kolom 
+```
+import pandas as pd
+import matplotlib.pyplot as plt
+
+mv = dataset.isna().sum()
+percent_null = dataset.isna().mean() * 100
+
+cek_missing_value = pd.concat([mv, percent_null], axis=1)
+cek_missing_value.columns = ['Jumlah Missing', 'Persentase Missing']
+cek_missing_value = cek_missing_value[cek_missing_value['Jumlah Missing'] > 0]
+
+cek_missing_value = cek_missing_value.dropna()
+cek_missing_value = cek_missing_value.sort_values(by='Persentase Missing', ascending=True)
+
+if not cek_missing_value.empty:
+    plt.figure(figsize=(25, 10))
+    plt.barh(cek_missing_value.index, cek_missing_value['Persentase Missing'], color='skyblue')
+    plt.xlabel('Persentase Missing (%)')
+    plt.ylabel('Kolom')
+    plt.title('Persentase Missing Value per Kolom')
+    plt.grid(axis='x', linestyle='--', alpha=0.6)
+
+    for index, value in enumerate(cek_missing_value['Persentase Missing']):
+        plt.text(value + 1, index, f"{value:.2f}%", va='center', fontsize=10)
+
+    plt.show()
+else:
+    print("Tidak ada missing value dalam dataset.")
+
+plt.show()
+```
+> Mengisi missing value dengan Regressi
+Memilih hanya kolom numerik saja, menghitung nilai korelasi masing-masing fitur. Kemudian mengecek kolom mana yang memiliki missing value dan membandingkan fitur-fitur lainnya yang  berkorelasi untuk mengisi missing value tersebut. Mengisi missing value dengan median yang telah disesuaikan oleh median, apabila masih belum teratasi maka diisi dengan modus. 
+```
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+import numpy as np
+
+# Pilih hanya kolom numerik dari 'dataset'
+numerik_dataset = dataset.select_dtypes(include=['number'])
+
+# Hitung matriks korelasi berdasarkan data numerik
+matriks_korelasi = numerik_dataset.corr()
+
+# Identifikasi kolom yang memiliki nilai yang hilang
+nilai_hilang = dataset.isnull().sum()
+kolom_hilang = nilai_hilang[nilai_hilang > 0].index
+
+# Temukan fitur yang paling berkorelasi dengan setiap kolom yang memiliki nilai hilang
+fitur_korelasi_teratas = matriks_korelasi[kolom_hilang.intersection(numerik_dataset.columns)]
+korelasi = fitur_korelasi_teratas.apply(lambda x: x.abs().sort_values(ascending=False).index[1], axis=0)
+
+# Mengisi nilai yang hilang menggunakan regresi linear
+for target_kolom, referensi_kolom in korelasi.items():
+    if target_kolom in dataset.columns and referensi_kolom in dataset.columns:
+        # Pilih data yang tidak memiliki nilai kosong pada kedua kolom
+        mask_valid = dataset[[target_kolom, referensi_kolom]].notnull().all(axis=1)
+        X_train = dataset.loc[mask_valid, [referensi_kolom]].values.reshape(-1, 1)
+        y_train = dataset.loc[mask_valid, target_kolom].values
+
+        # Latih model regresi linear
+        model = LinearRegression()
+        model.fit(X_train, y_train)
+
+        # Prediksi nilai yang hilang dengan menangani NaN dalam data uji
+        mask_hilang = dataset[target_kolom].isnull()
+        if mask_hilang.sum() > 0:
+            X_test = dataset.loc[mask_hilang, [referensi_kolom]].values.reshape(-1, 1)
+
+            # Gantilah NaN dalam X_test dengan median dari referensi_kolom
+            X_test = np.nan_to_num(X_test, nan=np.nanmedian(dataset[referensi_kolom]))
+
+            dataset.loc[mask_hilang, target_kolom] = model.predict(X_test)
+
+# Mengisi sisa nilai numerik yang hilang dengan median
+for kolom in kolom_hilang:
+    if dataset[kolom].isnull().sum() > 0 and pd.api.types.is_numeric_dtype(dataset[kolom]) and not pd.api.types.is_categorical_dtype(dataset[kolom]):
+        dataset[kolom].fillna(dataset[kolom].median(), inplace=True)
+
+# Mengisi nilai kategori yang hilang dengan modus (nilai yang paling sering muncul)
+kolom_kategorikal = dataset.select_dtypes(include=['object', 'category']).columns
+for kolom in kolom_kategorikal:
+    if dataset[kolom].isnull().sum() > 0:
+        dataset[kolom].fillna(dataset[kolom].mode()[0], inplace=True)
+
+# clean = dataset.copy()
+
+```
+> check missing value
+re-check untuk melihat apakah semua sudah terisi, jika belum maka akan dilakukan perbaikan dalam proses pengisian missing value 
+
+```
+dataset.isna().sum()
+
+```
+## Modeling 
+mendefinisikan kolom numerik untuk proses lebih lanjut 
+```
+numerik = dataset.select_dtypes(include=['int64', 'float64', 'int8'])
+numerik
+```
 
 
 ```
+import seaborn as sns
+import matplotlib.pyplot as plt
 
+
+columns_to_impute = numerik.columns[numerik.isna().any()].tolist()
+
+for column in columns_to_impute:
+    plt.figure(figsize=(8, 5))
+    sns.histplot(data=df, x=column, hue="death", kde=True, bins=30)
+    plt.title(f"Distribusi {column} berdasarkan Kategori Target (death)")
+    plt.xlabel(column)
+    plt.ylabel("Frekuensi")
+    plt.legend(title="Death", labels=["0 - Tidak", "1 - Ya"])
+    plt.show()
 ```
 
-```
+> Permodelan dengan KNN
+
+Menyalin dataset numerik agar tidak berdampak pada dataset asli.Memisahkan kolom target dan fitur. Untuk presentase data testing kami mengambil proporsi 80:20 dengan rincian 80% data untuk training dan 20% untuk testing. Kami melakukan standarisasi fitur untuk menilai kelaykan fitur tersebut untuk model. Model knn dikombinasikan dengn hyperparameter tuning dengan grid search, kemudian mengambil hasil terbaik untuk dijadikan model. 
 
 ```
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score
+
+# Salin dataset numerik
+apt = numerik.copy()
+
+# Memisahkan fitur dan target
+X = apt.iloc[:, :-1].values  # Semua kolom kecuali kolom target
+y = apt.iloc[:, -1].values   # Kolom target
+
+# Mengubah target kontinu menjadi kategori berdasarkan median (binarisasi manual)
+median_y = np.median(y)
+y = np.where(y >= median_y, 1, 0)  # 1 jika >= median, 0 jika < median
+
+# Membagi dataset (stratify untuk menjaga keseimbangan label)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+
+# Standarisasi fitur
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+# Inisialisasi model KNN
+knn = KNeighborsClassifier()
+
+# Definisi parameter untuk tuning
+param_dist = {
+    'n_neighbors': np.arange(3,20),
+    'weights': ['uniform', 'distance'],  # Bobot untuk tetangga
+    'metric': ['euclidean', 'manhattan', 'minkowski'],  # Metode perhitungan jarak
+    'p': [1, 2]  # Minkowski (p=1 Manhattan, p=2 Euclidean)
+}
+
+# Grid Search dengan Cross Validation (cv=5)
+rndm = RandomizedSearchCV(knn, param_dist, n_iter=10, cv=5, scoring='accuracy', n_jobs=-1, random_state=42)
+rndm.fit(X_train, y_train)
+
+# Gunakan model terbaik berdasarkan hasil tuning
+best_knn = rndm.best_estimator_
+
+# Prediksi pada data uji
+y_pred = best_knn.predict(X_test)
+
+# Evaluasi model
+accuracy = accuracy_score(y_test, y_pred)
+
+# Output hasil tuning
+print(f'Best Params: {rndm.best_params_}')
+print(f'Best Accuracy (CV): {rndm.best_score_:.2f}')
+print(f'Final Accuracy on Test Set: {accuracy:.2f}')
+```
+

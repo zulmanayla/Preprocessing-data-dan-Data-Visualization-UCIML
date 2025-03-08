@@ -95,23 +95,90 @@ for col, mapping in mappings.items():
     print("\n")
 
 ```
+## EDA (Exploratory Data Analysis)
+> Distribusi Numerik dan Kategorikal
 
 
 ```
+import matplotlib.pyplot as plt
+import seaborn as sns
+import math
 
+# Calculate the number of rows needed
+num_cols = 5  # Number of columns in the grid
+num_plots = len(dataset.columns)
+num_rows = math.ceil(num_plots / num_cols)
+
+# Create a figure and axes with the desired grid layout
+fig, axes = plt.subplots(num_rows, num_cols, figsize=(25, 5 * num_rows))
+fig.tight_layout(pad=3.0)  # Add padding between subplots
+
+# Flatten the axes array for easier iteration
+axes = axes.ravel()
+
+# Iterate through columns and plot
+for i, col in enumerate(dataset.columns):
+    ax = axes[i]  # Get the current subplot axis
+
+    if dataset[col].dtype == 'object':
+        sns.countplot(x=col, data=dataset, ax=ax)
+        ax.set_title(f'Distribusi Kategorikal - {col}')
+        ax.set_xlabel(col)
+        ax.set_ylabel('Frekuensi')
+    else:
+        sns.histplot(dataset[col], kde=True, bins=30, ax=ax)
+        ax.set_title(f'Distribusi Numerik - {col}')
+        ax.set_xlabel(col)
+        ax.set_ylabel('Frekuensi')
+
+# Hide any unused subplots
+for j in range(i + 1, num_plots):
+    axes[j].axis('off')
+
+plt.show()
 ```
 
+> Unique Value
+
+untuk mengetahui nilai yang unik dari setiap kolom 
 ```
+import pandas as pd
+
+def print_unique_values_in_dataframe(dataset):
+    for column in dataset.columns:
+        unique_values = dataset[column].unique()
+        print(f"Column '{column}':\n{unique_values}\n")
+
+# Assuming 'dataset' is your DataFrame, call the function:
+print_unique_values_in_dataframe(dataset)
 
 ```
+## Handling Missing Value
+> cek missing value
 
 ```
+dataset.isna().sum()
+```
+> cek rows yang menyebabkan kolom memiliki 1 missing value   
+
+dilakukan untuk mengetahui apakah rows tersebut, unik atau hanya satu rows saja yang meneybebkan  
 
 ```
+import pandas as pd
+from IPython.display import display
+pd.set_option('display.max_columns', None)                                      # Melihat semua fitur
+missing_features = dataset.isna().sum()
+missing_features = missing_features[missing_features == 1].index.tolist()       # Melihat fitur yang memuat 1 missing value
 
+rows_to_drop = set()
+# Menampilkan semua baris yang memiliki missing values pada fitur tersebut
+for feature in missing_features:
+    missing_rows = dataset[dataset[feature].isna()]
+    print(f"\nMissing value in feature: {feature}")
+    display(missing_rows)  # Display the DataFrame with the missing value
+    rows_to_drop.update(missing_rows.index) 
 ```
 
-```
 
 ```
 
